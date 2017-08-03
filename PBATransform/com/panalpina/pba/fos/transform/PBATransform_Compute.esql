@@ -1,0 +1,212 @@
+BROKER SCHEMA com.panalpina.pba.fos.transform
+DECLARE ns8 NAMESPACE 'http://corp.panorg.com/base';
+DECLARE ns NAMESPACE 'http://corp.panorg.com/finance';
+
+
+CREATE COMPUTE MODULE PBATransform_Compute
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		 CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		
+		SET InputLocalEnvironment.BLOB.BLOB = ASBITSTREAM(InputRoot.XMLNSC CCSID InputRoot.Properties.CodedCharSetId ENCODING InputRoot.Properties.Encoding);
+		SET OutputRoot.Properties.MessageType='{}:PBLCommon';	
+	
+		CREATE LASTCHILD OF OutputRoot DOMAIN('XMLNSC')
+ 			PARSE(InputLocalEnvironment.BLOB.BLOB  ENCODING InputRoot.Properties.Encoding 
+ 		--	PARSE(Environment.Variable.Data  ENCODING InputRoot.Properties.Encoding 
+ 			CCSID InputRoot.Properties.CodedCharSetId SET '' TYPE '{}:Test' OPTIONS RootBitStream );
+    
+		
+		RETURN TRUE;
+	END;
+
+	CREATE PROCEDURE CopyMessageHeaders() BEGIN
+		DECLARE I INTEGER 1;
+		DECLARE J INTEGER;
+		SET J = CARDINALITY(InputRoot.*[]);
+		WHILE I < J DO
+			SET OutputRoot.*[I] = InputRoot.*[I];
+			SET I = I + 1;
+		END WHILE;
+	END;
+
+	CREATE PROCEDURE CopyEntireMessage() BEGIN
+		SET OutputRoot = InputRoot;
+	END;
+END MODULE;
+
+
+CREATE COMPUTE MODULE PBATransform_Compute1
+	CREATE FUNCTION Main() RETURNS BOOLEAN
+	BEGIN
+		-- CALL CopyMessageHeaders();
+		-- CALL CopyEntireMessage();
+		
+	
+	--	CREATE LASTCHILD OF rOutMsgTree DOMAIN 'XMLNSC';
+		
+		DECLARE rOutMsgTree REFERENCE TO OutputRoot;
+		CREATE LASTCHILD OF rOutMsgTree DOMAIN 'XMLNSC';
+		DECLARE rFOSData REFERENCE TO InputRoot.XMLNSC.FOSDATA.SDBILLING;
+		DECLARE rOutMsgLocalEnvTree REFERENCE TO OutputLocalEnvironment;
+		DECLARE externalIDType INTEGER;
+		
+		--Converting InputRoot to Canonical Format
+			
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:incoTerms = rFOSData.INCOTCD;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:originLocation.ns:countyIsoCodeA2=rFOSData.FROMCD;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:desinationLocation.ns:countyIsoCodeA2 = rFOSData.TOCD;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:externalIdList[1].ns:externalId.(XMLNSC.Attribute)type = 'fosFileNum';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:externalIdList[1].ns:externalId.(XMLNSC.Attribute)value = rFOSData.ORDER_NUMBER;
+				
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:totalShippedQty[1] = '1';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:totalShippedQty[2] = '1';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:traficDirection = rFOSData.TRAFCDIR;
+	
+	-- 10	empty 
+		
+		--cargoVolume
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoVolumeList.ns:cargoVolume[1].(XMLNSC.Attribute)volumeType = 'gross';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoVolumeList.ns:cargoVolume[1].(XMLNSC.Attribute)value = rFOSData.TOTV;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoVolumeList.ns:cargoVolume[1].(XMLNSC.Attribute)volumeUnit = rFOSData.TOTVU;
+		
+		--cargoWeight
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[1].(XMLNSC.Attribute)weightType = 'gross' ;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[1].(XMLNSC.Attribute)value= rFOSData.TOTGW;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[1].(XMLNSC.Attribute)weightUnit= rFOSData.TOTGWU;
+
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:originLocation.ns:text = rFOSData.FROMTXT;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:etd = rFOSData.ETD;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:desinationLocation.ns:text = rFOSData.TOTXT;
+		
+		IF rFOSData.DEPCD = 'AE' OR rFOSData.DEPCD = 'AI' THEN
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:routingStageList[1].ns:routingStage.(XMLNSC.Attribute)stageNum = '0';
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:routingStageList[1].ns:routingStage.(XMLNSC.Attribute)routingNo =  rFOSData.FLIGHT;
+		ELSEIF rFOSData.DEPCD = 'SE' OR rFOSData.DEPCD = 'SI' THEN
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:routingStageList[1].ns:routingStage.(XMLNSC.Attribute)stageNum = '0';
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:routingStageList[1].ns:routingStage.ns:carrier.(XMLNSC.Attribute)carrierNo =  rFOSData.FLIGHT;
+		END IF;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:externalIdList[2].ns:externalId.(XMLNSC.Attribute)type = 'shipmentNo';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:externalIdList[2].ns:externalId.(XMLNSC.Attribute)value= rFOSData.SHIPNUM;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:originLocation.ns:externalIdList.ns:externalId.(XMLNSC.Attribute)type = 'iata';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:originLocation.ns:externalIdList.ns:externalId.(XMLNSC.Attribute)value = rFOSData.FROMCD;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:desinationLocation.ns:externalIdList.ns:externalId.(XMLNSC.Attribute)type = 'iata';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:desinationLocation.ns:externalIdList.ns:externalId.(XMLNSC.Attribute)value = rFOSData.TOCD;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].ns:taxCode = InputRoot.XMLNSC.TAXCD;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.(XMLNSC.Attribute)systemOfMeasurement = InputRoot.XMLNSC.FILEUOM;
+		
+		
+		--cargoVolume
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoVolumeList.ns:cargoVolume[2].(XMLNSC.Attribute)volumeType = 'gross';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoVolumeList.ns:cargoVolume[2].(XMLNSC.Attribute)value = rFOSData.TOTVI;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoVolumeList.ns:cargoVolume[2].(XMLNSC.Attribute)volumeUnit = rFOSData.TOTVIU;
+	
+		--cargoWeight
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[2].(XMLNSC.Attribute)weightType = 'gross' ;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[2].(XMLNSC.Attribute)value= rFOSData.TOTGWI;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[2].(XMLNSC.Attribute)weightUnit= rFOSData.TOTGWIU;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[3].(XMLNSC.Attribute)weightType = 'chargable';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[3].(XMLNSC.Attribute)value = rFOSData.TOTCW;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoWeightList.ns:cargoWeight[3].(XMLNSC.Attribute)weightUnit = rFOSData.TOTCWU;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:cargoItemList.ns:cargoItem.ns:cargoItemDescription = rFOSData.MARKSNUM;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:contractType = rFOSData.YOURREF1; 	
+
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:businessPartnerRoleList.ns:involvedParty[1].(XMLNSC.Attribute)role = 'billTo';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:businessPartnerRoleList.ns:involvedParty[1].ns:countryIsoCodeA2 = rFOSData.CTRYCD;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:businessPartnerRoleList.ns:involvedParty[1].ns:externalIdentifierList[1].ns:externalIdentifier[1].(XMLNSC.Attribute)type='acrNo';  
+		
+		IF rFOSData.ROLECD = 'BTO' THEN 		--	Bill to / Invoice Payer
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:businessPartnerRoleList.ns:involvedParty[1].(XMLNSC.Attribute)role = 'BP';
+		ELSEIF rFOSData.ROLECD = 'C05' THEN		--	Shipper
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:businessPartnerRoleList.ns:involvedParty[1].(XMLNSC.Attribute)role = 'Z1';
+		ELSEIF rFOSData.ROLECD = 'CNE' THEN		--	Consignee
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:businessPartnerRoleList.ns:involvedParty[1].(XMLNSC.Attribute)role = 'Z2';
+		ELSEIF rFOSData.ROLECD = 'SHT' THEN		--	Ship To
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:businessPartnerRoleList.ns:involvedParty[1].(XMLNSC.Attribute)role = 'SH';
+		END IF;
+			
+		IF rFOSData.INVTYPE = '20' OR rFOSData.INVTYPE = '22' THEN 		-- Invoice , Customs Invoice
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.(XMLNSC.Attribute)subType = 'ZFI';
+		ELSEIF rFOSData.INVTYPE = '21' OR rFOSData.INVTYPE = '23' THEN		-- Credit Note , Customs Credit Note
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.(XMLNSC.Attribute)subType = 'ZFC';
+		ELSEIF rFOSData.INVTYPE = '24' THEN								-- Detail to Group Invoice 
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.(XMLNSC.Attribute)subType = 'ZDGI';
+		ELSEIF rFOSData.INVTYPE = '25' THEN							-- Detail to Group Invoice , Customs Credit Note
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.(XMLNSC.Attribute)subType = 'ZDGC';
+		END IF;
+		
+			
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.(XMLNSC.Attribute)creationDate = rFOSData.INVDT;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:documentCurrency = rFOSData.TINVCURR;
+				
+		IF rFOSData.INVTYPE = '20' OR rFOSData.INVTYPE = '22' OR rFOSData.INVTYPE = '24' THEN 		
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:externalIdentifierList[1].ns:externalIdentifier[1].(XMLNSC.Attribute)type = 'fosInvoiceNum';
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:externalIdentifierList[1].ns:externalIdentifier[1].(XMLNSC.Attribute)value = rFOSData.INVOICENO;
+		END IF;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:documentCurrency = rFOSData.TINVCURR;			--2nd Occurance
+	
+		IF rFOSData.INVTYPE = '21' OR rFOSData.INVTYPE = '23' THEN
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:externalIdentifierList[1].ns:externalIdentifier[1].(XMLNSC.Attribute)type = 'fosOriginalInvoiceNum';
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:externalIdentifierList[1].ns:externalIdentifier[1].(XMLNSC.Attribute)value = rFOSData.CINVOICENO;
+		END IF;	
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:externalIdentifierList[1].ns:externalIdentifier[2].(XMLNSC.Attribute)type = 'customerRefNum';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:externalIdentifierList[1].ns:externalIdentifier[2].(XMLNSC.Attribute)value = rFOSData.YOURREF1;
+		
+
+		IF rFOSData.DEPCD = 'AE' OR rFOSData.DEPCD = 'AI' THEN 			-- Air
+				SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:salesArea.ns:businessArea = '10';
+		ELSEIF rFOSData.DEPCD = 'SE' OR rFOSData.DEPCD = 'SI' THEN		-- Ocean
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:salesArea.ns:businessArea = '20';
+		ELSEIF rFOSData.DEPCD = 'to be provided by SCP' THEN		-- Logistics
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:salesArea.ns:businessArea = '';
+		ELSEIF rFOSData.DEPCD = 'to be provided by SCP' THEN		-- 4 Walls and Distribution
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:salesArea.ns:businessArea = '';
+		ELSEIF rFOSData.DEPCD = 'SE' OR rFOSData.DEPCD = 'SI' THEN		-- Road and Rail
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:salesArea.ns:businessArea = '';
+		END IF;
+		
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:salesArea.ns:division = '10';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:companyCode = rFOSData.ACCHOUNO;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:containerList.ns:container.ns:externalIdList.ns:externalId.(XMLNSC.Attribute)type = 'containerNo';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:forwardingOrder.ns:containerList.ns:container.ns:externalIdList.ns:externalId.(XMLNSC.Attribute)value = rFOSData.CONTKEY;
+		
+		-- 47 xsd structure is empty
+		
+		IF rFOSData.COSTTYPE = '2602' THEN 		
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].(XMLNSC.Attribute)costElement = '92602';
+		ELSEIF rFOSData.COSTTYPE = '2612' THEN		
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].(XMLNSC.Attribute)costElement = '92612';
+		ELSEIF rFOSData.COSTTYPE = '2622' THEN	
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].(XMLNSC.Attribute)costElement = '92622';
+		ELSEIF rFOSData.COSTTYPE = '2632' THEN		
+			SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].(XMLNSC.Attribute)costElement = '92632';
+		END IF;
+				
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].ns:lineItemTxt =  rFOSData.LINETEXT;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].(XMLNSC.Attribute)lineNum =  rFOSData.LINENO;
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].ns:priceConditions[1].ns:priceCondition.(XMLNSC.Attribute)lineNum = '00';
+		SET rOutMsgTree.XMLNSC.ns:FinancialDoc.ns:invoceLineItemList.ns:invoceLineItem[1].ns:lineItemAmt = InputRoot.XMLNSC.LINEAMOUNT;
+		
+			
+
+		RETURN TRUE;
+	END;
+END MODULE;
+
+
+
+
+
+
+
