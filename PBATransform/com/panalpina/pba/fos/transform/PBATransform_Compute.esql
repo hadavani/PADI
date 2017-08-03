@@ -50,7 +50,7 @@ CREATE COMPUTE MODULE PBATransform_Compute1
 		CREATE LASTCHILD OF rOutMsgTree DOMAIN 'XMLNSC';
 		DECLARE rFOSData REFERENCE TO InputRoot.XMLNSC.FOSDATA.SDBILLING;
 		DECLARE rOutMsgLocalEnvTree REFERENCE TO OutputLocalEnvironment;
-		DECLARE externalIDType INTEGER;
+		--DECLARE externalIDType INTEGER;
 		
 		--Converting InputRoot to Canonical Format
 			
